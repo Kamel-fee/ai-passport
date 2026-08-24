@@ -22,6 +22,7 @@ static const demo_entry_t DEMOS[] = {
     { "Button",  demo_button_enter,  demo_button_exit,  demo_button_key  },
     { "Audio",   demo_audio_enter,   demo_audio_exit,   demo_audio_key   },
     { "Battery", demo_battery_enter, demo_battery_exit, demo_battery_key },
+    { "Simple Menu", demo_simple_menu_enter, demo_simple_menu_exit, demo_simple_menu_key },
 };
 #define DEMO_COUNT (sizeof(DEMOS) / sizeof(DEMOS[0]))
 
@@ -49,10 +50,18 @@ static void menu_refresh(void) {
 static void menu_build(void) {
     s_menu_scr = ui_pixel_screen_create("FoloToy");
 
+    // 5 个 demo:2 列 × 3 行(最下行 1 个居中占位不影响,多余格留空)
+    // 卡片稍紧凑,确保第 3 行底部不遮挡吉祥物(y=238~286)。
+    const int card_w = 102;
+    const int card_h = 58;
+    const int row_gap = 62;
+    const int y_start = 54;
     for (size_t i = 0; i < DEMO_COUNT; i++) {
-        int x = 11 + (int)(i % 2) * 112;
-        int y = 58 + (int)(i / 2) * 86;
-        s_cards[i] = ui_pixel_panel_create(s_menu_scr, x, y, 102, 72, UI_PAPER);
+        int col = (int)(i % 2);
+        int row = (int)(i / 2);
+        int x = 11 + col * 112;
+        int y = y_start + row * row_gap;
+        s_cards[i] = ui_pixel_panel_create(s_menu_scr, x, y, card_w, card_h, UI_PAPER);
         s_rows[i] = lv_label_create(s_cards[i]);
         lv_obj_set_style_text_font(s_rows[i], &lv_font_montserrat_20, 0);
         lv_obj_set_style_text_align(s_rows[i], LV_TEXT_ALIGN_CENTER, 0);
@@ -120,9 +129,10 @@ void app_main(void) {
     s_ok[1] = (bsp_button_init(on_key, NULL) == ESP_OK);
     s_ok[2] = (bsp_audio_init() == ESP_OK);
     s_ok[3] = (bsp_battery_init() == ESP_OK);
+    s_ok[4] = true;                                   // Simple Menu 只依赖显示+按键
 
     if (bsp_lvgl_lock(1000)) { enter_menu(); bsp_lvgl_unlock(); }
 
-    ESP_LOGI(TAG, "就绪:Display=%d Button=%d Audio=%d Battery=%d",
-             s_ok[0], s_ok[1], s_ok[2], s_ok[3]);
+    ESP_LOGI(TAG, "就绪:Display=%d Button=%d Audio=%d Battery=%d SimpleMenu=%d",
+             s_ok[0], s_ok[1], s_ok[2], s_ok[3], s_ok[4]);
 }
