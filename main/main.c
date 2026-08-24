@@ -9,6 +9,7 @@
 #include "bsp_button.h"
 #include "bsp_audio.h"
 #include "bsp_battery.h"
+#include "bsp_storage.h"
 #include "bsp_pins.h"      // 错误日志里要打印 BSP_LCD_* 引脚号
 #include "demo.h"
 #include "ui_pixel.h"
@@ -18,10 +19,11 @@
 static const char *TAG = "main";
 
 static const demo_entry_t DEMOS[] = {
-    { "Display", demo_display_enter, demo_display_exit, demo_display_key },
-    { "Button",  demo_button_enter,  demo_button_exit,  demo_button_key  },
-    { "Audio",   demo_audio_enter,   demo_audio_exit,   demo_audio_key   },
-    { "Battery", demo_battery_enter, demo_battery_exit, demo_battery_key },
+    { "Display",    demo_display_enter,    demo_display_exit,    demo_display_key    },
+    { "Button",     demo_button_enter,     demo_button_exit,     demo_button_key     },
+    { "Audio",      demo_audio_enter,      demo_audio_exit,      demo_audio_key      },
+    { "Battery",    demo_battery_enter,    demo_battery_exit,    demo_battery_key    },
+    { "PunchCard",  demo_punchcard_enter,  demo_punchcard_exit,  demo_punchcard_key  },
 };
 #define DEMO_COUNT (sizeof(DEMOS) / sizeof(DEMOS[0]))
 
@@ -120,9 +122,10 @@ void app_main(void) {
     s_ok[1] = (bsp_button_init(on_key, NULL) == ESP_OK);
     s_ok[2] = (bsp_audio_init() == ESP_OK);
     s_ok[3] = (bsp_battery_init() == ESP_OK);
+    s_ok[4] = (bsp_storage_init() == ESP_OK);
 
     if (bsp_lvgl_lock(1000)) { enter_menu(); bsp_lvgl_unlock(); }
 
-    ESP_LOGI(TAG, "就绪:Display=%d Button=%d Audio=%d Battery=%d",
-             s_ok[0], s_ok[1], s_ok[2], s_ok[3]);
+    ESP_LOGI(TAG, "就绪:Display=%d Button=%d Audio=%d Battery=%d PunchCard=%d",
+             s_ok[0], s_ok[1], s_ok[2], s_ok[3], s_ok[4]);
 }
