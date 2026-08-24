@@ -12,10 +12,15 @@ Page({
     const taskId = parseInt(options.id);
     const task = app.getTask(taskId);
     if (task) {
+      const totalDuration = task.nodes.reduce((sum, n) => sum + (n.durationSec || 60), 0);
       const displayTask = {
         ...task,
-        totalDuration: task.nodes.reduce((sum, n) => sum + (n.durationSec || 60), 0),
-        totalDurationStr: this.formatDuration(task.nodes.reduce((sum, n) => sum + (n.durationSec || 60), 0))
+        totalDuration: totalDuration,
+        totalDurationStr: this.formatDuration(totalDuration),
+        nodes: task.nodes.map(n => ({
+          ...n,
+          durationStr: this.formatNodeDuration(n.durationSec)
+        }))
       };
       this.setData({ task: displayTask, taskId });
     }
@@ -31,6 +36,13 @@ Page({
     const s = sec % 60;
     if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     return `${m}:${String(s).padStart(2, '0')}`;
+  },
+
+  formatNodeDuration(sec) {
+    if (sec / 60 >= 1) {
+      return (sec / 60).toFixed(1) + ' 分';
+    }
+    return sec + ' 秒';
   },
 
   onEdit() {

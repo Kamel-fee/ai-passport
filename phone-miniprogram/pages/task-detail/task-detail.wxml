@@ -20,7 +20,7 @@
         <view style="font-size: 30rpx; font-weight: bold;">{{node.name}}</view>
         <view style="font-size: 24rpx; color: #78909C;">{{node.durationSec}} 秒</view>
       </view>
-      <view class="tag">{{node.durationSec / 60 >= 1 ? (node.durationSec / 60).toFixed(1) + ' 分' : node.durationSec + ' 秒'}}</view>
+      <view class="tag">{{node.durationStr}}</view>
     </view>
   </view>
 
