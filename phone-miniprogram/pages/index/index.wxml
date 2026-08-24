@@ -1,0 +1,93 @@
+<view class="container">
+  <view class="header-bar">
+    <view class="header-title">AI Passport</view>
+    <view class="status-badge {{bleConnected ? 'status-connected' : 'status-disconnected'}}" bindtap="onConnectBLE">
+      {{bleStatus}}
+    </view>
+  </view>
+
+  <view class="section-title">我的任务</view>
+
+  <block wx:if="{{tasks.length === 0}}">
+    <view class="empty-state">
+      <view class="empty-state-icon">📋</view>
+      <view class="empty-state-text">暂无任务，点击下方按钮创建</view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="card" wx:for="{{tasks}}" wx:key="id" bindtap="onTaskTap" data-id="{{item.id}}">
+      <view style="display: flex; justify-content: space-between; align-items: start;">
+        <view style="flex: 1;">
+          <view class="card-title">{{item.name}}</view>
+          <view class="card-subtitle">
+            <text class="tag tag-blue">{{item.nodeCount}} 节点</text>
+            <text style="margin: 0 8rpx;"></text>
+            <text class="tag">{{item.totalDurationStr}}</text>
+          </view>
+        </view>
+      </view>
+      <view style="display: flex; justify-content: flex-end; margin-top: 16rpx;">
+        <view class="btn-secondary" style="font-size: 24rpx; padding: 10rpx 20rpx; margin-right: 12rpx;" 
+              catchtap="onTaskEdit" data-id="{{item.id}}">
+          编辑
+        </view>
+        <view class="btn-danger" style="font-size: 24rpx; padding: 10rpx 20rpx;" 
+              catchtap="onTaskDelete" data-id="{{item.id}}">
+          删除
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <view class="section-title">快捷操作</view>
+  <view style="display: flex; gap: 16rpx; flex-wrap: wrap;">
+    <view class="btn-primary" style="flex: 1; min-width: 140rpx;" bindtap="onHistoryTap">
+      📊 历史记录
+    </view>
+    <view class="{{bleConnected ? 'btn-secondary' : 'btn-primary'}}" style="flex: 1; min-width: 140rpx;" 
+          bindtap="onConnectBLE">
+      {{bleConnected ? '📡 BLE已连' : '🔗 连接卡片'}}
+    </view>
+  </view>
+
+  <view class="floating-btn" bindtap="onAddTask">+</view>
+
+  <view class="modal" wx:if="{{showScanModal}}" catchtap="closeScanModal" 
+        style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+               background: rgba(0,0,0,0.5); z-index: 200; display: flex; 
+               align-items: center; justify-content: center;" catchstop="">
+    <view style="background: #FFFFFF; border-radius: 16rpx; padding: 30rpx; 
+                 width: 600rpx; max-height: 70vh; overflow: hidden; display: flex; flex-direction: column;"
+          catchstop="">
+      <view class="card-title" style="text-align: center; margin-bottom: 20rpx;">
+        扫描附近设备
+      </view>
+      
+      <view wx:if="{{scanning}}" style="text-align: center; padding: 40rpx;">
+        <view style="font-size: 48rpx; animation: pulse 1.5s infinite;">📡</view>
+        <view style="margin-top: 16rpx; color: #78909C;">扫描中...</view>
+      </view>
+
+      <scroll-view wx:else scroll-y style="max-height: 50vh;">
+        <view wx:if="{{discoveredDevices.length === 0}}" style="text-align: center; padding: 40rpx; color: #78909C;">
+          未发现 FoloToy 设备
+        </view>
+        <view wx:for="{{discoveredDevices}}" wx:key="deviceId" 
+              class="card" bindtap="onDeviceTap" data-id="{{item.deviceId}}">
+          <view class="card-title">{{item.name || '未知设备'}}</view>
+          <view class="card-subtitle">{{item.RSSI}} dBm</view>
+        </view>
+      </scroll-view>
+
+      <view style="display: flex; gap: 16rpx; margin-top: 20rpx;">
+        <view class="btn-secondary" style="flex: 1;" bindtap="closeScanModal">
+          取消
+        </view>
+        <view class="btn-primary" style="flex: 1;" bindtap="startScan">
+          重新扫描
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

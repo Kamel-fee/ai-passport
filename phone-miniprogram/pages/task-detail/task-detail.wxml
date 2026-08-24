@@ -1,0 +1,45 @@
+<view class="container" wx:if="{{task}}">
+  <view class="card">
+    <view class="card-title" style="font-size: 40rpx;">{{task.name}}</view>
+    <view style="display: flex; gap: 16rpx; margin: 16rpx 0;">
+      <view class="tag tag-blue">{{task.nodes.length}} 节点</view>
+      <view class="tag">总时长 {{task.totalDurationStr}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">节点列表</view>
+    <view wx:for="{{task.nodes}}" wx:for-item="node" wx:for-index="idx" wx:key="idx"
+          style="display: flex; align-items: center; padding: 12rpx 0; border-bottom: 1rpx solid #E0E0E0;">
+      <view style="width: 50rpx; height: 50rpx; background: #1689E8; color: #FFFFFF; 
+                   border-radius: 50%; display: flex; align-items: center; justify-content: center;
+                   font-weight: bold; font-size: 24rpx; margin-right: 16rpx;">
+        {{idx + 1}}
+      </view>
+      <view style="flex: 1;">
+        <view style="font-size: 30rpx; font-weight: bold;">{{node.name}}</view>
+        <view style="font-size: 24rpx; color: #78909C;">{{node.durationSec}} 秒</view>
+      </view>
+      <view class="tag">{{node.durationSec / 60 >= 1 ? (node.durationSec / 60).toFixed(1) + ' 分' : node.durationSec + ' 秒'}}</view>
+    </view>
+  </view>
+
+  <view style="display: flex; gap: 16rpx; margin-top: 20rpx;">
+    <view class="btn-primary" style="flex: 1;" bindtap="onSendToCard">
+      📡 发送到卡片
+    </view>
+    <view class="btn-secondary" style="flex: 1;" bindtap="onEdit">
+      ✏️ 编辑
+    </view>
+  </view>
+
+  <view class="btn-danger" style="margin-top: 16rpx;" bindtap="onDelete">
+    🗑️ 删除任务
+  </view>
+
+  <view wx:if="{{!bleConnected}}" style="margin-top: 20rpx; padding: 16rpx; 
+         background: #FFB23E20; border: 2rpx solid #FFB23E; border-radius: 8rpx;
+         font-size: 24rpx; color: #17202A; text-align: center;">
+    ⚠️ 未连接卡片，发送功能不可用
+  </view>
+</view>

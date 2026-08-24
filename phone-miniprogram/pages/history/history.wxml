@@ -1,0 +1,53 @@
+<view class="container">
+  <view class="header-bar">
+    <view class="header-title">历史记录</view>
+    <view class="status-badge {{bleConnected ? 'status-connected' : 'status-disconnected'}}">
+      {{bleConnected ? 'BLE已连' : 'BLE断开'}}
+    </view>
+  </view>
+
+  <block wx:if="{{history.length === 0}}">
+    <view class="empty-state">
+      <view class="empty-state-icon">📊</view>
+      <view class="empty-state-text">暂无历史记录</view>
+      <view class="empty-state-text" style="font-size: 24rpx; margin-top: 8rpx;">
+        完成任务后记录会自动保存
+      </view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view wx:for="{{history}}" wx:key="id" class="card">
+      <view style="display: flex; justify-content: space-between; align-items: start;">
+        <view style="flex: 1;">
+          <view class="card-title">{{item.taskName}}</view>
+          <view class="card-subtitle">{{item.nodeName}} · {{item.timeStr}}</view>
+        </view>
+        <view class="status-badge {{item.completedOnTime ? 'status-connected' : 'status-warning'}}">
+          {{item.completedOnTime ? '✓ 按时' : '⚠ 超时'}}
+        </view>
+      </view>
+
+      <view style="display: flex; gap: 20rpx; margin-top: 16rpx; font-size: 24rpx;">
+        <view>计划: <text style="color: #78909C;">{{item.plannedStr}}</text></view>
+        <view>实际: <text style="color: {{item.completedOnTime ? '#82BE2D' : '#E43B2F'}};">{{item.actualStr}}</text></view>
+      </view>
+
+      <view wx:if="{{!item.completedOnTime}}" style="font-size: 24rpx; color: #E43B2F; margin-top: 8rpx;">
+        超时 {{item.diffStr}}
+      </view>
+      <view wx:else style="font-size: 24rpx; color: #82BE2D; margin-top: 8rpx;">
+        提前 {{item.diffStr}}
+      </view>
+    </view>
+  </block>
+
+  <view style="display: flex; gap: 16rpx; margin-top: 20rpx;" wx:if="{{history.length > 0}}">
+    <view class="btn-primary" style="flex: 1;" bindtap="onFetchFromCard">
+      📡 从卡片读取
+    </view>
+    <view class="btn-danger" style="flex: 1;" bindtap="onClearHistory">
+      🗑️ 清空记录
+    </view>
+  </view>
+</view>

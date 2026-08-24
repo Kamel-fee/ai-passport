@@ -1,0 +1,17 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/task-edit/task-edit",
+    "pages/task-detail/task-detail",
+    "pages/history/history"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#1689E8",
+    "navigationBarTitleText": "AI Passport",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F4F4EA"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

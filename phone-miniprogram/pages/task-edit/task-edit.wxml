@@ -1,0 +1,57 @@
+<view class="container">
+  <view class="card">
+    <view class="section-title">任务名称</view>
+    <input class="input-field" placeholder="输入任务名称" maxlength="31"
+           value="{{task.name}}" bindinput="onTaskNameInput"/>
+
+    <view class="section-title">
+      时间分段 ({{task.nodes.length}} 节点, 共 {{totalDuration}} 秒)
+    </view>
+
+    <view class="card-subtitle" style="margin-bottom: 16rpx;">
+      💡 提示：卡片端按节点顺序依次执行，每个节点到时会有声音提示
+    </view>
+
+    <view wx:for="{{task.nodes}}" wx:for-item="node" wx:for-index="idx" wx:key="idx" 
+          class="node-item">
+      <view class="node-info" style="flex: 1;">
+        <input class="input-field" style="margin-bottom: 8rpx; font-size: 28rpx;" 
+               placeholder="节点名称" maxlength="15"
+               value="{{node.name}}" bindinput="onNodeNameInput" data-idx="{{idx}}"/>
+        <view style="display: flex; align-items: center; gap: 12rpx;">
+          <input class="input-field" style="width: 120rpx; margin-bottom: 0; font-size: 28rpx;" 
+                 type="number" placeholder="秒"
+                 value="{{node.durationSec}}" bindinput="onNodeDurationInput" data-idx="{{idx}}"/>
+          <view wx:for="{{timePresets}}" wx:for-item="preset" wx:key="label"
+                class="tag {{node.durationSec === preset.value ? 'tag-blue' : ''}}"
+                style="padding: 6rpx 10rpx; font-size: 22rpx;"
+                bindtap="onPresetTap" data-idx="{{idx}}" data-val="{{preset.value}}">
+            {{preset.label}}
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{task.nodes.length > 1}}" 
+            class="btn-danger" style="font-size: 24rpx; padding: 10rpx 16rpx; margin-left: 12rpx;"
+            bindtap="onRemoveNode" data-idx="{{idx}}">
+        移除
+      </view>
+    </view>
+
+    <view style="display: flex; gap: 16rpx; margin-top: 16rpx; flex-wrap: wrap;">
+      <view class="btn-secondary" style="flex: 1; min-width: 200rpx;" bindtap="onAddNode">
+        ➕ 添加节点
+      </view>
+      <view class="btn-secondary" style="flex: 1; min-width: 200rpx;" bindtap="onDistributeEven">
+        ⚖️ 均分时间
+      </view>
+    </view>
+
+    <view class="btn-secondary" style="margin-top: 16rpx;" bindtap="onAutoSegment">
+      🔄 自动分段（按总时长均分）
+    </view>
+  </view>
+
+  <view class="btn-primary" style="margin-top: 20rpx;" bindtap="onSave">
+    {{isEdit ? '保存修改' : '创建任务'}}
+  </view>
+</view>
