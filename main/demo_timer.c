@@ -385,10 +385,10 @@ static void running_build(void)
     lv_obj_set_size(s_run_node_bar, 204, 20);
     lv_bar_set_range(s_run_node_bar, 0, 100);
     lv_bar_set_value(s_run_node_bar, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(s_run_node_bar, lv_color_hex(0xCCCCCC), 0);
-    lv_obj_set_style_bar_color(s_run_node_bar, lv_color_hex(UI_GRASS), 0);
-    lv_obj_set_style_radius(s_run_node_bar, 0, 0);
-    lv_obj_set_style_indicator_radius(s_run_node_bar, 0, 0);
+    lv_obj_set_style_bg_color(s_run_node_bar, lv_color_hex(0xCCCCCC), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_run_node_bar, lv_color_hex(UI_GRASS), LV_PART_INDICATOR);
+    lv_obj_set_style_radius(s_run_node_bar, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_run_node_bar, 0, LV_PART_INDICATOR);
 
     s_run_progress = lv_label_create(panel);
     lv_obj_set_style_text_font(s_run_progress, &lv_font_montserrat_12, 0);

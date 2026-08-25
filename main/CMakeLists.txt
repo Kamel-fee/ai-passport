@@ -10,5 +10,5 @@ idf_component_register(
          "task_timer.c"
          "ble_comm.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp bt
+    REQUIRES bsp bt nvs_flash
 )

@@ -5,6 +5,7 @@
 #include "esp_bt_main.h"
 #include "esp_gatts_api.h"
 #include "esp_gap_ble_api.h"
+#include "esp_gatt_defs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -12,77 +13,82 @@
 
 static const char *TAG = "ble_comm";
 
-#define PROFILE_APP_ID   0x00
-#define GATT_DB_MAX_SIZE 15
+#define PROFILE_APP_ID   0
+#define NUM_HANDLES      5
 
-enum {
-    IDX_SVC = 0,
-    IDX_CHAR_TASK_WRITE_DECL,
-    IDX_CHAR_TASK_WRITE_VAL,
-    IDX_CHAR_TASK_READ_DECL,
-    IDX_CHAR_TASK_READ_VAL,
-    IDX_CHAR_HISTORY_READ_DECL,
-    IDX_CHAR_HISTORY_READ_VAL,
-    IDX_CHAR_CMD_WRITE_DECL,
-    IDX_CHAR_CMD_WRITE_VAL,
-    IDX_CHAR_NB,
-};
-
-static uint16_t s_gatts_db[IDX_NB];
-
-static esp_ble_gatts_cb_param_t s_gatts_cb_param;
+static esp_gatt_if_t s_gatts_if;
 static bool s_inited;
 static bool s_connected;
-static esp_gatts_if_t s_gatts_if;
+static uint16_t s_service_handle;
+static uint16_t s_char_write_handle;
+static uint16_t s_char_read_handle;
+
+static uint8_t s_task_write_buf[2048];
+static uint16_t s_task_write_len;
+static uint8_t s_read_buf[2048];
+static uint16_t s_read_len;
+static uint8_t s_history_buf[2048];
+static uint16_t s_history_len;
 
 static void (*s_task_received_cb)(const timer_task_t *task);
-static void (*s_history_request_cb)(void);
 
-#define CHAR_TASK_WRITE_UUID   "0000ffe1-0000-1000-8000-00805f9b34fb"
-#define CHAR_TASK_READ_UUID    "0000ffe2-0000-1000-8000-00805f9b34fb"
-#define CHAR_HISTORY_READ_UUID "0000ffe3-0000-1000-8000-00805f9b34fb"
-#define CHAR_CMD_WRITE_UUID    "0000ffe4-0000-1000-8000-00805f9b34fb"
+static const char *DEVICE_NAME = "FoloToy-Timer";
 
-static uint8_t s_task_read_buf[2048];
-static uint16_t s_task_read_len;
-static uint8_t s_history_read_buf[2048];
-static uint16_t s_history_read_len;
+static esp_ble_adv_data_t s_adv_data = {
+    .set_scan_rsp = false,
+    .include_name = true,
+    .include_txpower = true,
+    .appearance = 0x00,
+    .manufacturer_len = 0,
+    .p_manufacturer_data = NULL,
+    .service_data_len = 0,
+    .p_service_data = NULL,
+    .flag = ESP_BLE_ADV_FLAG_GEN_DISC,
+};
 
-static void parse_task_from_ble(const uint8_t *data, uint16_t len)
-{
-    if (len < sizeof(timer_task_t)) {
-        ESP_LOGW(TAG, "task data too short: %d", len);
-        return;
-    }
+static esp_ble_adv_params_t s_adv_params = {
+    .adv_int_min = 0x100,
+    .adv_int_max = 0x100,
+    .adv_type = ADV_TYPE_IND,
+    .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
+    .channel_map = ADV_CHNL_ALL,
+    .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
+};
 
-    timer_task_t task;
-    memcpy(&task, data, sizeof(timer_task_t));
-    if (task.node_count > TIMER_MAX_NODES) task.node_count = TIMER_MAX_NODES;
-    if (task.node_count == 0) return;
+static uint8_t s_adv_config_done;
+#define ADV_CONFIG_FLAG (1 << 0)
 
-    int idx = timer_task_count();
-    timer_task_save(&task, idx);
-    ESP_LOGI(TAG, "task '%s' saved (idx=%d, nodes=%d)", task.name, idx, task.node_count);
+static esp_gatt_char_prop_t s_char_write_prop = 0;
+static esp_gatt_char_prop_t s_char_read_prop = 0;
 
-    if (s_task_received_cb) s_task_received_cb(&task);
-}
+static esp_attr_value_t s_char_write_val = {
+    .attr_max_len = 512,
+    .attr_len = 0,
+    .attr_value = NULL,
+};
+
+static esp_attr_value_t s_char_read_val = {
+    .attr_max_len = 2048,
+    .attr_len = 0,
+    .attr_value = NULL,
+};
 
 static void build_task_list_response(void)
 {
     int count = timer_task_count();
     uint16_t offset = 0;
 
-    memcpy(&s_task_read_buf[offset], &count, sizeof(int));
+    memcpy(&s_read_buf[offset], &count, sizeof(int));
     offset += sizeof(int);
 
-    for (int i = 0; i < count && offset < sizeof(s_task_read_buf) - sizeof(timer_task_t); i++) {
+    for (int i = 0; i < count && offset < sizeof(s_read_buf) - sizeof(timer_task_t); i++) {
         timer_task_t task;
         if (timer_task_load(i, &task) == ESP_OK) {
-            memcpy(&s_task_read_buf[offset], &task, sizeof(timer_task_t));
+            memcpy(&s_read_buf[offset], &task, sizeof(timer_task_t));
             offset += sizeof(timer_task_t);
         }
     }
-    s_task_read_len = offset;
+    s_read_len = offset;
 }
 
 static void build_history_response(void)
@@ -90,33 +96,115 @@ static void build_history_response(void)
     int count = timer_history_count();
     uint16_t offset = 0;
 
-    memcpy(&s_history_read_buf[offset], &count, sizeof(int));
+    memcpy(&s_history_buf[offset], &count, sizeof(int));
     offset += sizeof(int);
 
-    for (int i = 0; i < count && offset < sizeof(s_history_read_buf) - sizeof(timer_history_t); i++) {
+    for (int i = 0; i < count && offset < sizeof(s_history_buf) - sizeof(timer_history_t); i++) {
         timer_history_t record;
         if (timer_history_load(i, &record) == ESP_OK) {
-            memcpy(&s_history_read_buf[offset], &record, sizeof(timer_history_t));
+            memcpy(&s_history_buf[offset], &record, sizeof(timer_history_t));
             offset += sizeof(timer_history_t);
         }
     }
-    s_history_read_len = offset;
+    s_history_len = offset;
 }
 
-static void gatts_cb(esp_gatts_if_t gatts_if,
-                       const esp_ble_gatts_cb_param_t *param)
+static void gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
-    (void)gatts_if;
+    switch (event) {
+    case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
+        s_adv_config_done &= ~ADV_CONFIG_FLAG;
+        if (s_adv_config_done == 0) {
+            esp_ble_gap_start_advertising(&s_adv_params);
+        }
+        break;
+    case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
+        if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
+            ESP_LOGE(TAG, "adv start failed: %d", param->adv_start_cmpl.status);
+        } else {
+            ESP_LOGI(TAG, "advertising started");
+        }
+        break;
+    case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
+        ESP_LOGI(TAG, "adv stopped");
+        break;
+    default:
+        break;
+    }
+}
 
-    switch (param->gatts_cb_type) {
+static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
+                       esp_ble_gatts_cb_param_t *param)
+{
+    switch (event) {
+    case ESP_GATTS_REG_EVT:
+        if (param->reg.status == ESP_GATT_OK) {
+            s_gatts_if = gatts_if;
+            ESP_LOGI(TAG, "GATT registered, if=%d", gatts_if);
+
+            esp_ble_gap_set_device_name(DEVICE_NAME);
+            esp_ble_gap_config_adv_data(&s_adv_data);
+            s_adv_config_done |= ADV_CONFIG_FLAG;
+
+            esp_gatt_srvc_id_t service_id = {
+                .is_primary = true,
+                .id.inst_id = 0x00,
+                .id.uuid.len = ESP_UUID_LEN_128,
+                .id.uuid.uuid.uuid128 = {0xFB, 0x34, 0x9B, 0x5F, 0x80, 0x00, 0x00, 0x80,
+                                         0x00, 0x10, 0x00, 0x00, 0xFF, 0xE0, 0x00, 0x00},
+            };
+            esp_ble_gatts_create_service(gatts_if, &service_id, NUM_HANDLES);
+        }
+        break;
+
+    case ESP_GATTS_CREATE_EVT:
+        if (param->create.status == ESP_GATT_OK) {
+            s_service_handle = param->create.service_handle;
+            esp_ble_gatts_start_service(s_service_handle);
+
+            esp_bt_uuid_t write_uuid = {
+                .len = ESP_UUID_LEN_128,
+                .uuid.uuid128 = {0xFB, 0x34, 0x9B, 0x5F, 0x80, 0x00, 0x00, 0x80,
+                                  0x00, 0x10, 0x00, 0x00, 0xFF, 0xE1, 0x00, 0x00},
+            };
+            s_char_write_prop = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
+            esp_ble_gatts_add_char(s_service_handle, &write_uuid,
+                                    ESP_GATT_PERM_WRITE,
+                                    s_char_write_prop,
+                                    &s_char_write_val, NULL);
+
+            esp_bt_uuid_t read_uuid = {
+                .len = ESP_UUID_LEN_128,
+                .uuid.uuid128 = {0xFB, 0x34, 0x9B, 0x5F, 0x80, 0x00, 0x00, 0x80,
+                                 0x00, 0x10, 0x00, 0x00, 0xFF, 0xE2, 0x00, 0x00},
+            };
+            s_char_read_prop = ESP_GATT_CHAR_PROP_BIT_READ;
+            esp_ble_gatts_add_char(s_service_handle, &read_uuid,
+                                    ESP_GATT_PERM_READ,
+                                    s_char_read_prop,
+                                    &s_char_read_val, NULL);
+        }
+        break;
+
+    case ESP_GATTS_ADD_CHAR_EVT:
+        if (param->add_char.status == ESP_GATT_OK) {
+            if (param->add_char.attr_handle <= s_service_handle + 1) {
+                s_char_write_handle = param->add_char.attr_handle;
+            } else {
+                s_char_read_handle = param->add_char.attr_handle;
+            }
+            ESP_LOGI(TAG, "char added: handle=%d", param->add_char.attr_handle);
+        }
+        break;
+
     case ESP_GATTS_CONNECT_EVT:
         s_connected = true;
-        ESP_LOGI(TAG, "BLE connected");
+        ESP_LOGI(TAG, "BLE connected, conn_id=%d", param->connect.conn_id);
         break;
 
     case ESP_GATTS_DISCONNECT_EVT:
         s_connected = false;
-        esp_ble_gap_start_advertising();
+        esp_ble_gap_start_advertising(&s_adv_params);
         ESP_LOGI(TAG, "BLE disconnected");
         break;
 
@@ -125,142 +213,50 @@ static void gatts_cb(esp_gatts_if_t gatts_if,
         uint16_t len = param->write.len;
         uint8_t *value = param->write.value;
 
-        if (handle == s_gatts_db[IDX_CHAR_TASK_WRITE_VAL]) {
-            parse_task_from_ble(value, len);
-        } else if (handle == s_gatts_db[IDX_CHAR_CMD_WRITE_VAL]) {
-            if (len >= 1 && value[0] == 0x01) {
-                ESP_LOGI(TAG, "BLE: request task list");
-                build_task_list_response();
-            } else if (len >= 1 && value[0] == 0x02) {
-                ESP_LOGI(TAG, "BLE: request history");
-                build_history_response();
-                if (s_history_request_cb) s_history_request_cb();
-            } else if (len >= 1 && value[0] == 0x03) {
-                ESP_LOGI(TAG, "BLE: clear history");
-                timer_history_clear();
+        if (handle == s_char_write_handle) {
+            if (len >= sizeof(int) + sizeof(timer_task_t) && s_task_received_cb) {
+                int count;
+                memcpy(&count, value, sizeof(int));
+                uint16_t offset = sizeof(int);
+                for (int i = 0; i < count && offset + sizeof(timer_task_t) <= len; i++) {
+                    timer_task_t task;
+                    memcpy(&task, &value[offset], sizeof(timer_task_t));
+                    int idx = timer_task_count();
+                    timer_task_save(&task, idx);
+                    offset += sizeof(timer_task_t);
+                    ESP_LOGI(TAG, "task '%s' saved (idx=%d)", task.name, idx);
+                    if (s_task_received_cb) s_task_received_cb(&task);
+                }
             }
+            esp_ble_gatts_send_response(gatts_if, param->write.conn_id,
+                                         param->write.trans_id, ESP_GATT_OK, NULL);
         }
         break;
     }
 
     case ESP_GATTS_READ_EVT: {
         uint16_t handle = param->read.handle;
-        esp_gatt_status_t status = ESP_GATT_OK;
         esp_gatt_rsp_t rsp;
         memset(&rsp, 0, sizeof(rsp));
 
-        if (handle == s_gatts_db[IDX_CHAR_TASK_READ_VAL]) {
-            rsp.value_len = s_task_read_len;
-            if (s_task_read_len > 0) {
-                memcpy(rsp.value, s_task_read_buf, s_task_read_len);
-            }
-        } else if (handle == s_gatts_db[IDX_CHAR_HISTORY_READ_VAL]) {
-            rsp.value_len = s_history_read_len;
-            if (s_history_read_len > 0) {
-                memcpy(rsp.value, s_history_read_buf, s_history_read_len);
+        if (handle == s_char_read_handle) {
+            build_task_list_response();
+            rsp.attr_value.len = s_read_len;
+            if (s_read_len > 0) {
+                memcpy(rsp.attr_value.value, s_read_buf, s_read_len);
             }
         } else {
-            status = ESP_GATT_INVALID_HANDLE;
+            rsp.attr_value.len = 0;
         }
-        esp_ble_gatts_send_response(s_gatts_if, param->read.conn_id,
-                                     param->read.trans_id, status, &rsp);
+        esp_ble_gatts_send_response(gatts_if, param->read.conn_id,
+                                     param->read.trans_id, ESP_GATT_OK, &rsp);
         break;
     }
 
-    case ESP_GATTS_CREAT_ATTR_TAB_EVT: {
-        if (param->create.status == ESP_GATT_OK) {
-            esp_attr_value_t gatts_demo_attr_tab[IDX_CHAR_NB] = {
-                [IDX_SVC] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_16(ESP_GATT_UUID_PRI_SERVICE),
-                       0, ESP_GATT_PERM_READ,
-                       IDX_CHAR_TASK_WRITE_VAL, 0}},
-                [IDX_CHAR_TASK_WRITE_DECL] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_16(ESP_GATT_UUID_CHAR_DECLARATION),
-                       ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_WRITE_NR,
-                       ESP_GATT_PERM_WRITE,
-                       IDX_CHAR_TASK_WRITE_VAL, 0}},
-                [IDX_CHAR_TASK_WRITE_VAL] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_128(CHAR_TASK_WRITE_UUID),
-                       0, ESP_GATT_PERM_WRITE,
-                       0, 512}},
-                [IDX_CHAR_TASK_READ_DECL] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_16(ESP_GATT_UUID_CHAR_DECLARATION),
-                       ESP_GATT_CHAR_PROP_BIT_READ,
-                       ESP_GATT_PERM_READ,
-                       IDX_CHAR_TASK_READ_VAL, 0}},
-                [IDX_CHAR_TASK_READ_VAL] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_128(CHAR_TASK_READ_UUID),
-                       0, ESP_GATT_PERM_READ,
-                       0, 2048}},
-                [IDX_CHAR_HISTORY_READ_DECL] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_16(ESP_GATT_UUID_CHAR_DECLARATION),
-                       ESP_GATT_CHAR_PROP_BIT_READ,
-                       ESP_GATT_PERM_READ,
-                       IDX_CHAR_HISTORY_READ_VAL, 0}},
-                [IDX_CHAR_HISTORY_READ_VAL] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_128(CHAR_HISTORY_READ_UUID),
-                       0, ESP_GATT_PERM_READ,
-                       0, 2048}},
-                [IDX_CHAR_CMD_WRITE_DECL] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_16(ESP_GATT_UUID_CHAR_DECLARATION),
-                       ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_WRITE_NR,
-                       ESP_GATT_PERM_WRITE,
-                       IDX_CHAR_CMD_WRITE_VAL, 0}},
-                [IDX_CHAR_CMD_WRITE_VAL] =
-                    {{ESP_GATT_AUTO_RSP,
-                      {ESP_BLE_UUID_128(CHAR_CMD_WRITE_UUID),
-                       0, ESP_GATT_PERM_WRITE,
-                       0, 64}},
-            };
-            esp_ble_gatts_attr_db_init_by_uuid(
-                PROFILE_APP_ID, gatts_demo_attr_tab,
-                IDX_CHAR_NB, IDX_SVC);
-        }
+    case ESP_GATTS_START_EVT:
+        ESP_LOGI(TAG, "service started");
         break;
-    }
 
-    default:
-        break;
-    }
-}
-
-static void gap_cb(esp_ble_gap_cb_param_t *param)
-{
-    switch (param->gap_cb_type) {
-    case ESP_BLE_GAP_CONGEST_EVT:
-        break;
-    case ESP_BLE_GAP_ENC_EVT:
-        break;
-    case ESP_BLE_GAP_PASS_NOTIFY_EVT:
-        break;
-    case ESP_BLE_GAP_DH_CP_EVT:
-        break;
-    case ESP_BLE_GAP_AUTH_KEY_EVT:
-        break;
-    case ESP_BLE_GAP_SEC_EVT:
-        break;
-    case ESP_BLE_GAP_BLE_NAME_EVT:
-        break;
-    case ESP_BLE_GAP_BLE_ADDR_EVT:
-        break;
-    case ESP_BLE_GAP_SCAN_PARAM_EVT:
-        break;
-    case ESP_BLE_GAP_SET_PARAMS_EVT:
-        break;
-    case ESP_BLE_GAP_ADV_DATA_SET_EVT:
-        break;
-    case ESP_BLE_GAP_ADV_DATA_UPDATE_EVT:
-        break;
-    case ESP_BLE_GAP_MAX:
-        break;
     default:
         break;
     }
@@ -302,15 +298,15 @@ esp_err_t ble_comm_init(void)
         return err;
     }
 
-    err = esp_ble_gap_register_callback(gap_cb);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "gap_register: %s", esp_err_to_name(err));
-        return err;
-    }
-
     err = esp_ble_gatts_register_callback(gatts_cb);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "gatts_register: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = esp_ble_gap_register_callback(gap_cb);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "gap_register: %s", esp_err_to_name(err));
         return err;
     }
 
@@ -320,47 +316,8 @@ esp_err_t ble_comm_init(void)
         return err;
     }
 
-    err = esp_ble_gatts_app_local_cfg_req(PROFILE_APP_ID);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "gatts_app_local_cfg_req: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    err = esp_ble_gatts_app_create(PROFILE_APP_ID);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "gatts_app_create: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    esp_ble_gap_set_device_name("FoloToy-Timer");
-
-    esp_ble_gap_config_adv_data_t adv_data = {
-        .set_scan_rsp = false,
-        .include_name = true,
-        .include_txpower = true,
-        .min_interval = 0x0006,
-        .max_interval = 0x0010,
-        .appearance = 0x00,
-        .manufacturer_len = 0,
-        .p_manufacturer_data = NULL,
-        .service_data_len = 0,
-        .p_service_data = NULL,
-        .service_uuid_len = 16,
-        .p_service_uuid = NULL,
-        .flag = {
-            .general_scan_disc = 1,
-        }
-    };
-    esp_ble_gap_config_adv_data(&adv_data);
-
-    err = esp_ble_gap_start_advertising();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "start_advertising: %s", esp_err_to_name(err));
-        return err;
-    }
-
     s_inited = true;
-    ESP_LOGI(TAG, "BLE GATT server initialized, advertising as FoloToy-Timer");
+    ESP_LOGI(TAG, "BLE GATT server initialized, advertising as %s", DEVICE_NAME);
     return ESP_OK;
 }
 
@@ -368,6 +325,7 @@ void ble_comm_deinit(void)
 {
     if (!s_inited) return;
     esp_ble_gap_stop_advertising();
+    esp_ble_gatts_app_unregister(s_gatts_if);
     s_connected = false;
     s_inited = false;
     ESP_LOGI(TAG, "BLE deinitialized");
@@ -393,9 +351,4 @@ esp_err_t ble_comm_send_history(void)
 void ble_comm_set_task_received_cb(void (*cb)(const timer_task_t *task))
 {
     s_task_received_cb = cb;
-}
-
-void ble_comm_set_history_request_cb(void (*cb)(void))
-{
-    s_history_request_cb = cb;
 }
