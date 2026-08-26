@@ -8,6 +8,12 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 # 烧录时按实际探测容量回写镜像头。
 CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=y
 
+# --- 分区表 ---
+# 默认单应用分区只有 1MB,容纳不下 BLE + LVGL 多字号的固件(约 1.35MB),
+# 使用自定义分区表把 factory 分区扩到 4MB。
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
 # --- 控制台:USB-Serial-JTAG(C3 原生 USB,GPIO18/19)---
 # 不用 UART0:其默认 TX=GPIO21 与本板背光引脚冲突。
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
@@ -31,3 +37,6 @@ CONFIG_FREERTOS_HZ=1000
 
 # --- 蓝牙 ---
 CONFIG_BT_ENABLED=y
+# IDF 5.5 默认关闭 BLE 4.2 传统广播 API(esp_ble_gap_start_advertising 等),
+# 必须显式打开,否则链接时报 undefined reference。
+CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y

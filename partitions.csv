@@ -1,0 +1,6 @@
+# Name,   Type, SubType, Offset,  Size,     Flags
+# 8MB Flash:任务数据存 NVS,应用分区加大到 4MB 以容纳 BLE + LVGL 多字号字体
+nvs,      data, nvs,     0x9000,  0x10000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        4M,
+storage,  data, fat,     ,        0x2FB000,
