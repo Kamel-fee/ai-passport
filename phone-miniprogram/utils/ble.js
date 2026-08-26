@@ -23,9 +23,14 @@ function scanDevices() {
           allowDuplicatesKey: false,
           success: () => {
             const devices = [];
+            const foundIds = {};
             const onDeviceFound = (res) => {
               res.devices.forEach(device => {
-                if (device.name && device.name.indexOf('FoloToy') !== -1) {
+                // 安卓部分机型 name 为空,名字在 localName 里
+                const name = device.name || device.localName || '';
+                if (name.indexOf('FoloToy') !== -1 && !foundIds[device.deviceId]) {
+                  foundIds[device.deviceId] = true;
+                  device.name = name;
                   devices.push(device);
                 }
               });
@@ -36,12 +41,15 @@ function scanDevices() {
               wx.stopBluetoothDevicesDiscovery();
               wx.offBluetoothDeviceFound();
               resolve(devices);
-            }, 3000);
+            }, 5000);
           },
           fail: reject
         });
       },
-      fail: reject
+      fail: (err) => {
+        // 蓝牙开关未打开/无权限时给出明确提示
+        reject(err);
+      }
     });
   });
 }

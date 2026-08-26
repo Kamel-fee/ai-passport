@@ -19,6 +19,8 @@ static const char *TAG = "ble_comm";
 static esp_gatt_if_t s_gatts_if;
 static bool s_inited;
 static bool s_connected;
+static bool s_advertising;
+static bool s_init_failed;
 static uint16_t s_service_handle;
 static uint16_t s_char_write_handle;
 static uint16_t s_char_read_handle;
@@ -121,12 +123,15 @@ static void gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
         break;
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
         if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
+            s_advertising = false;
             ESP_LOGE(TAG, "adv start failed: %d", param->adv_start_cmpl.status);
         } else {
+            s_advertising = true;
             ESP_LOGI(TAG, "advertising started as %s", DEVICE_NAME);
         }
         break;
     case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
+        s_advertising = false;
         ESP_LOGI(TAG, "adv stopped");
         break;
     default:
@@ -271,9 +276,18 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
     }
 }
 
+// 统一错误出口:记录失败原因,屏幕上可显示
+static esp_err_t ble_fail(const char *step, esp_err_t err)
+{
+    s_init_failed = true;
+    ESP_LOGE(TAG, "BLE init failed at %s: %s", step, esp_err_to_name(err));
+    return err;
+}
+
 esp_err_t ble_comm_init(void)
 {
     if (s_inited) return ESP_OK;
+    s_init_failed = false;
 
     esp_err_t err;
 
@@ -284,46 +298,25 @@ esp_err_t ble_comm_init(void)
 
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     err = esp_bt_controller_init(&bt_cfg);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "bt_controller_init: %s", esp_err_to_name(err));
-        return err;
-    }
+    if (err != ESP_OK) return ble_fail("controller_init", err);
 
     err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "bt_controller_enable: %s", esp_err_to_name(err));
-        return err;
-    }
+    if (err != ESP_OK) return ble_fail("controller_enable", err);
 
     err = esp_bluedroid_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "bluedroid_init: %s", esp_err_to_name(err));
-        return err;
-    }
+    if (err != ESP_OK) return ble_fail("bluedroid_init", err);
 
     err = esp_bluedroid_enable();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "bluedroid_enable: %s", esp_err_to_name(err));
-        return err;
-    }
+    if (err != ESP_OK) return ble_fail("bluedroid_enable", err);
 
     err = esp_ble_gatts_register_callback(gatts_cb);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "gatts_register: %s", esp_err_to_name(err));
-        return err;
-    }
+    if (err != ESP_OK) return ble_fail("gatts_register", err);
 
     err = esp_ble_gap_register_callback(gap_cb);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "gap_register: %s", esp_err_to_name(err));
-        return err;
-    }
+    if (err != ESP_OK) return ble_fail("gap_register", err);
 
     err = esp_ble_gatts_app_register(PROFILE_APP_ID);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "gatts_app_register: %s", esp_err_to_name(err));
-        return err;
-    }
+    if (err != ESP_OK) return ble_fail("gatts_app_register", err);
 
     s_inited = true;
     ESP_LOGI(TAG, "BLE GATT server initialized, advertising as %s", DEVICE_NAME);
@@ -336,6 +329,7 @@ void ble_comm_deinit(void)
     esp_ble_gap_stop_advertising();
     esp_ble_gatts_app_unregister(s_gatts_if);
     s_connected = false;
+    s_advertising = false;
     s_inited = false;
     ESP_LOGI(TAG, "BLE deinitialized");
 }
@@ -343,6 +337,14 @@ void ble_comm_deinit(void)
 bool ble_comm_is_connected(void)
 {
     return s_connected;
+}
+
+// BLE 总状态:0=未初始化/失败 1=广播中 2=已连接
+int ble_comm_get_state(void)
+{
+    if (s_connected) return 2;
+    if (s_inited && s_advertising) return 1;
+    return 0;
 }
 
 esp_err_t ble_comm_send_task_list(void)

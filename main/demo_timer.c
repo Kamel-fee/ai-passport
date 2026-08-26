@@ -199,7 +199,25 @@ static void sound_play_complete(void)
 
 static void on_tick(void)
 {
-    if (s_view != VIEW_RUNNING) return;
+    // HOME 界面:每秒刷新一次 BLE 状态行(广播启动是异步的,需要轮询显示)
+    if (s_view == VIEW_HOME) {
+        if (s_home_info && bsp_lvgl_lock(200)) {
+            char info[128];
+            const char *ble_state;
+            switch (ble_comm_get_state()) {
+            case 2:  ble_state = "CONNECTED"; break;
+            case 1:  ble_state = "ADV OK"; break;
+            default: ble_state = "BLE OFF"; break;
+            }
+            snprintf(info, sizeof(info),
+                     "OK: START  UP/DOWN: SELECT\n"
+                     "HISTORY: %d records  BLE: %s",
+                     timer_history_count(), ble_state);
+            lv_label_set_text(s_home_info, info);
+            bsp_lvgl_unlock();
+        }
+        return;
+    }
     if (s_runtime.state != TIMER_STATE_RUNNING) return;
 
     s_runtime.node_elapsed++;
@@ -341,11 +359,16 @@ static void home_refresh(void)
     }
 
     char info[128];
+    const char *ble_state;
+    switch (ble_comm_get_state()) {
+    case 2:  ble_state = "CONNECTED"; break;
+    case 1:  ble_state = "ADV OK"; break;
+    default: ble_state = "BLE OFF"; break;
+    }
     snprintf(info, sizeof(info),
              "OK: START  UP/DOWN: SELECT\n"
              "HISTORY: %d records  BLE: %s",
-             timer_history_count(),
-             ble_comm_is_connected() ? "CONNECTED" : "STANDBY");
+             timer_history_count(), ble_state);
     lv_label_set_text(s_home_info, info);
 }
 
@@ -636,6 +659,8 @@ void demo_timer_enter(void)
     s_last_activity = timer_get_time_sec();
 
     enter_view(VIEW_HOME);
+    // HOME 界面也依赖 tick 刷新 BLE 状态行
+    if (s_tick_timer) xTimerStart(s_tick_timer, 0);
     ESP_LOGI(TAG, "timer app entered, %d tasks loaded", s_task_count);
 }
 
