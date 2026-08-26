@@ -113,6 +113,7 @@ static void gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
     switch (event) {
     case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
+        ESP_LOGI(TAG, "adv data set complete, status=%d", param->adv_data_cmpl.status);
         s_adv_config_done &= ~ADV_CONFIG_FLAG;
         if (s_adv_config_done == 0) {
             esp_ble_gap_start_advertising(&s_adv_params);
@@ -122,7 +123,7 @@ static void gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
         if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
             ESP_LOGE(TAG, "adv start failed: %d", param->adv_start_cmpl.status);
         } else {
-            ESP_LOGI(TAG, "advertising started");
+            ESP_LOGI(TAG, "advertising started as %s", DEVICE_NAME);
         }
         break;
     case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
@@ -143,8 +144,14 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
             ESP_LOGI(TAG, "GATT registered, if=%d", gatts_if);
 
             esp_ble_gap_set_device_name(DEVICE_NAME);
-            esp_ble_gap_config_adv_data(&s_adv_data);
-            s_adv_config_done |= ADV_CONFIG_FLAG;
+
+            esp_err_t err = esp_ble_gap_config_adv_data(&s_adv_data);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "config_adv_data failed: %s, starting adv directly", esp_err_to_name(err));
+                esp_ble_gap_start_advertising(&s_adv_params);
+            } else {
+                s_adv_config_done |= ADV_CONFIG_FLAG;
+            }
 
             esp_gatt_srvc_id_t service_id = {
                 .is_primary = true,
@@ -154,6 +161,8 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
                                          0x00, 0x10, 0x00, 0x00, 0xFF, 0xE0, 0x00, 0x00},
             };
             esp_ble_gatts_create_service(gatts_if, &service_id, NUM_HANDLES);
+        } else {
+            ESP_LOGE(TAG, "GATT reg failed, status=%d", param->reg.status);
         }
         break;
 

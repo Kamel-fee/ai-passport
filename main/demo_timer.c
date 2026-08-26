@@ -7,6 +7,7 @@
 #include "ui_pixel.h"
 #include "lvgl.h"
 #include "esp_log.h"
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
@@ -624,7 +625,10 @@ void demo_timer_enter(void)
                     NULL, TIMER_TASK_PRIO, &s_sound_task);
     }
 
-    ble_comm_init();
+    esp_err_t ble_err = ble_comm_init();
+    if (ble_err != ESP_OK) {
+        ESP_LOGE(TAG, "BLE init failed: %s", esp_err_to_name(ble_err));
+    }
 
     timer_runtime_load(&s_runtime);
     s_sound_head = s_sound_tail = 0;
